@@ -94,14 +94,14 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
 
 
 def define_D(input_nc, ndf, netD,
-             n_layers_D=3, norm='batch', use_sigmoid=False, init_type='normal', init_gain=0.02, gpu_ids=[]):
+             n_layers_D=3, norm='batch', use_sigmoid=False, init_type='normal', init_gain=0.02, gpu_ids=[], use_linear=True):
     net = None
     norm_layer = get_norm_layer(norm_type=norm)
 
     if netD == 'basic':
-        net = NLayerDiscriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer, use_sigmoid=use_sigmoid)
+        net = NLayerDiscriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer, use_sigmoid=use_sigmoid, use_linear=use_linear)
     elif netD == 'n_layers':
-        net = NLayerDiscriminator(input_nc, ndf, n_layers_D, norm_layer=norm_layer, use_sigmoid=use_sigmoid)
+        net = NLayerDiscriminator(input_nc, ndf, n_layers_D, norm_layer=norm_layer, use_sigmoid=use_sigmoid, use_linear=use_linear)
     elif netD == 'pixel':
         net = PixelDiscriminator(input_nc, ndf, norm_layer=norm_layer, use_sigmoid=use_sigmoid)
     else:
@@ -367,7 +367,7 @@ def Dynet():
 
 # Defines the PatchGAN discriminator with the specified arguments.
 class NLayerDiscriminator(nn.Module):
-    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm3d, use_sigmoid=False):
+    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm3d, use_sigmoid=False, use_linear=True):
         super(NLayerDiscriminator, self).__init__()
         if type(norm_layer) == functools.partial:
             use_bias = norm_layer.func == nn.InstanceNorm3d
@@ -393,19 +393,24 @@ class NLayerDiscriminator(nn.Module):
                 nn.LeakyReLU(0.2, True)
             ]
 
-        nf_mult_prev = nf_mult
-        nf_mult = min(2**n_layers, 8)
-        sequence += [
-            nn.Conv3d(ndf * nf_mult_prev, ndf * nf_mult,
-                      kernel_size=kw, stride=1, padding=padw, bias=use_bias),
-            norm_layer(ndf * nf_mult),
-            nn.LeakyReLU(0.2, True)
-        ]
+        if not use_linear:
+            nf_mult_prev = nf_mult
+            nf_mult = min(2**n_layers, 8)
+            sequence += [
+                nn.Conv3d(ndf * nf_mult_prev, ndf * nf_mult,
+                        kernel_size=kw, stride=1, padding=padw, bias=use_bias),
+                norm_layer(ndf * nf_mult),
+                nn.LeakyReLU(0.2, True)
+            ]
 
-        sequence += [nn.Conv3d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]
+            sequence += [nn.Conv3d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]
+
 
         if use_sigmoid:
             sequence += [nn.Sigmoid()]
+
+        if use_linear: 
+            sequence += [nn.Flatten(), nn.Linear(64*512, 1)]
 
         self.model = nn.Sequential(*sequence)
 

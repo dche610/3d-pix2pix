@@ -433,11 +433,13 @@ class NifitDataSet(torch.utils.data.Dataset):
         else:
 
             label_path = self.labels_list[index]
+            mask_path = self.masks_list[index]
 
         if self.which_direction == 'AtoB':
 
             data_path = data_path
             label_path = label_path
+            mask_path = mask_path
 
         elif self.which_direction == 'BtoA':
 
@@ -459,24 +461,28 @@ class NifitDataSet(torch.utils.data.Dataset):
 
         if self.train:
             label = self.read_image(label_path)
+            mask = self.read_image(mask_path)
             if Segmentation is False:
                 label = Normalization(label)  # set intensity 0-255
             castImageFilter.SetOutputPixelType(self.bit)
             label = castImageFilter.Execute(label)
+            mask = castImageFilter.Execute(mask)
 
         elif self.test:
             label = self.read_image(label_path)
+            mask = self.read_image(mask_path)
             if Segmentation is False:
                 label = Normalization(label)  # set intensity 0-255
             castImageFilter.SetOutputPixelType(self.bit)
             label = castImageFilter.Execute(label)
+            mask = castImageFilter.Execute(mask)
 
         else:
             label = sitk.Image(image.GetSize(), self.bit)
             label.SetOrigin(image.GetOrigin())
             label.SetSpacing(image.GetSpacing())
 
-        sample = {'image': image, 'label': label}
+        sample = {'image': image, 'label': label, 'mask': mask}
 
         if self.transforms:  # apply the transforms to image and label (normalization, resampling, patches)
             for transform in self.transforms:
@@ -485,6 +491,7 @@ class NifitDataSet(torch.utils.data.Dataset):
         # convert sample to tf tensors
         image_np = abs(sitk.GetArrayFromImage(sample['image']))
         label_np = abs(sitk.GetArrayFromImage(sample['label']))
+        mask_np = abs(sitk.GetArrayFromImage(sample['mask']))
 
         if Segmentation is True:
             label_np = abs(np.around(label_np))
@@ -492,14 +499,16 @@ class NifitDataSet(torch.utils.data.Dataset):
         # to unify matrix dimension order between SimpleITK([x,y,z]) and numpy([z,y,x])  (actually it´s the contrary)
         image_np = np.transpose(image_np, (2, 1, 0))
         label_np = np.transpose(label_np, (2, 1, 0))
+        mask_np = np.transpose(mask_np, (2, 1, 0))
 
         label_np = (label_np - 127.5) / 127.5
         image_np = (image_np - 127.5) / 127.5
 
         image_np = image_np[np.newaxis, :, :, :]
         label_np = label_np[np.newaxis, :, :, :]
+        mask_np = mask_np[np.newaxis, :, :, :]
 
-        return torch.from_numpy(image_np), torch.from_numpy(label_np)  # this is the final output to feed the network
+        return torch.from_numpy(image_np), torch.from_numpy(label_np), torch.from_numpy(mask_np)  # this is the final output to feed the network
 
     def __len__(self):
         return len(self.images_list)
@@ -577,6 +586,7 @@ class NifitDataSet_testing(torch.utils.data.Dataset):
                 label = Normalization(label)  # set intensity 0-255
             castImageFilter.SetOutputPixelType(self.bit)
             label = castImageFilter.Execute(label)
+            mask = castImageFilter.Execute(mask)
 
         elif self.test:
             label = self.read_image(label_path)
@@ -584,13 +594,14 @@ class NifitDataSet_testing(torch.utils.data.Dataset):
                 label = Normalization(label)  # set intensity 0-255
             castImageFilter.SetOutputPixelType(self.bit)
             label = castImageFilter.Execute(label)
+            mask = castImageFilter.Execute(mask)
 
         else:
             label = sitk.Image(image.GetSize(), self.bit)
             label.SetOrigin(image.GetOrigin())
             label.SetSpacing(image.GetSpacing())
 
-        sample = {'image': image, 'label': label}
+        sample = {'image': image, 'label': label, 'mask': mask}
 
         if self.transforms:  # apply the transforms to image and label (normalization, resampling, patches)
             for transform in self.transforms:

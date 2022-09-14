@@ -59,8 +59,9 @@ class Pix2Pix3DModel(BaseModel):
 
         if self.isTrain:  # define a discriminator; conditional GANs need to take both input and output images; Therefore, #channels for D is input_nc + output_nc
             use_sigmoid = opt.no_lsgan
+            use_linear = opt.global_disc
             self.netD = networks3D.define_D(opt.input_nc + opt.output_nc, opt.ndf, opt.netD,
-                                          opt.n_layers_D, opt.norm, use_sigmoid, opt.init_type, opt.init_gain, self.gpu_ids)
+                                          opt.n_layers_D, opt.norm, use_sigmoid, opt.init_type, opt.init_gain, self.gpu_ids, use_linear)
 
         if self.isTrain:
             # define loss functions
@@ -84,6 +85,8 @@ class Pix2Pix3DModel(BaseModel):
         AtoB = self.opt.which_direction == 'AtoB'
         self.real_A = input[0 if AtoB else 1].to(self.device)
         self.real_B = input[1 if AtoB else 0].to(self.device)
+        self.mask = input[2].to(self.device)
+        print(self.mask.size())
         # self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
     def forward(self):
@@ -94,7 +97,9 @@ class Pix2Pix3DModel(BaseModel):
         """Calculate GAN loss for the discriminator"""
         # Fake; stop backprop to the generator by detaching fake_B
         fake_AB = torch.cat((self.real_A, self.fake_B), 1)  # we use conditional GANs; we need to feed both input and output to the discriminator
+        # print(fake_AB.size())
         pred_fake = self.netD(fake_AB.detach())
+        # print(pred_fake.size())
         self.loss_D_fake = self.criterionGAN(pred_fake, False)
         # Real
         real_AB = torch.cat((self.real_A, self.real_B), 1)
@@ -109,6 +114,7 @@ class Pix2Pix3DModel(BaseModel):
         # First, G(A) should fake the discriminator
         fake_AB = torch.cat((self.real_A, self.fake_B), 1)
         pred_fake = self.netD(fake_AB)
+        # print(pred_fake.size())
         self.loss_G_GAN = self.criterionGAN(pred_fake, True)
         # Second, G(A) = B
         self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_L1

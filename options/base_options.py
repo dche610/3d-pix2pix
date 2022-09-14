@@ -24,10 +24,10 @@ class BaseOptions():
         parser.add_argument('--ngf', type=int, default=64, help='# of gen filters in first conv layer')
         parser.add_argument('--ndf', type=int, default=64, help='# of discrim filters in first conv layer')
         parser.add_argument('--netD', type=str, default='n_layers', help='selects model to use for netD')
-        parser.add_argument('--n_layers_D', type=int, default=3, help='only used if netD==n_layers')
+        parser.add_argument('--n_layers_D', type=int, default=5, help='only used if netD==n_layers')
         parser.add_argument('--netG', type=str, default='unet_128', help='selects model to use for netG. Look on Networks3D to see the all list')
 
-        parser.add_argument('--gpu_ids', default='1', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
+        parser.add_argument('--gpu_ids', default='2', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
         parser.add_argument('--name', type=str, default='test_save', help='name of the experiment. It decides where to store samples and models')
         parser.add_argument('--model', type=str, default='pix2pix3D', help='chooses which model to use. cycle_gan')
 
