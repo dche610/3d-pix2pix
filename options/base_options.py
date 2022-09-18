@@ -12,9 +12,9 @@ class BaseOptions():
     def initialize(self, parser):
         parser.add_argument('--data_path', type=str, default='./Data_folder/train/', help='Train images path')
         parser.add_argument('--val_path', type=str, default='./Data_folder/test/', help='Validation images path')
-        parser.add_argument('--batch_size', type=int, default=4, help='input batch size')
+        parser.add_argument('--batch_size', type=int, default=8, help='input batch size')
         parser.add_argument('--patch_size', default=[128, 128, 128], help='Size of the patches extracted from the image')
-        parser.add_argument('--input_nc', type=int, default=1, help='# of input image channels')
+        parser.add_argument('--input_nc', type=int, default=2, help='# of input image channels')
         parser.add_argument('--output_nc', type=int, default=1, help='# of output image channels')
         parser.add_argument('--resample', default=False, help='Decide or not to rescale the images to a new resolution')
         parser.add_argument('--new_resolution', default=(0.45, 0.45, 0.45), help='New resolution (if you want to resample the data again during training')
@@ -27,9 +27,10 @@ class BaseOptions():
         parser.add_argument('--n_layers_D', type=int, default=5, help='only used if netD==n_layers')
         parser.add_argument('--netG', type=str, default='unet_128', help='selects model to use for netG. Look on Networks3D to see the all list')
 
-        parser.add_argument('--gpu_ids', default='2', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
+        parser.add_argument('--gpu_ids', default='9', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
         parser.add_argument('--name', type=str, default='test_save', help='name of the experiment. It decides where to store samples and models')
         parser.add_argument('--model', type=str, default='pix2pix3D', help='chooses which model to use. cycle_gan')
+        parser.add_argument('--coarse', default=False, action='store_true', help='coarse or refinement network')
 
         parser.add_argument('--which_direction', type=str, default='AtoB', help='AtoB or BtoA (keep it AtoB)')
         parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')

@@ -464,6 +464,7 @@ class NifitDataSet(torch.utils.data.Dataset):
             mask = self.read_image(mask_path)
             if Segmentation is False:
                 label = Normalization(label)  # set intensity 0-255
+                # mask = Normalization(mask)
             castImageFilter.SetOutputPixelType(self.bit)
             label = castImageFilter.Execute(label)
             mask = castImageFilter.Execute(mask)
@@ -473,6 +474,7 @@ class NifitDataSet(torch.utils.data.Dataset):
             mask = self.read_image(mask_path)
             if Segmentation is False:
                 label = Normalization(label)  # set intensity 0-255
+                # mask = Normalization(mask)
             castImageFilter.SetOutputPixelType(self.bit)
             label = castImageFilter.Execute(label)
             mask = castImageFilter.Execute(mask)
@@ -501,8 +503,19 @@ class NifitDataSet(torch.utils.data.Dataset):
         label_np = np.transpose(label_np, (2, 1, 0))
         mask_np = np.transpose(mask_np, (2, 1, 0))
 
+        # print('before max ' + str(np.max(image_np)))
+        # print('before min ' + str(np.min(image_np)))
+        # print(np.max(label_np))
+        # print(np.max(mask_np))
+
         label_np = (label_np - 127.5) / 127.5
         image_np = (image_np - 127.5) / 127.5
+        # mask_np = (mask_np - 127.5) / 127.5
+
+        # print('after max ' + str(np.max(image_np)))
+        # print('after min ' + str(np.min(image_np)))
+        # print('mask max ' + str(np.max(mask_np)))
+        # print('mask min ' + str(np.min(mask_np)))
 
         image_np = image_np[np.newaxis, :, :, :]
         label_np = label_np[np.newaxis, :, :, :]

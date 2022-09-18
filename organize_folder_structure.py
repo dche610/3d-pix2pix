@@ -143,7 +143,7 @@ def Registration(image, label):
 parser = argparse.ArgumentParser()
 parser.add_argument('--images', default='./Data_folder/images', help='path to the images a (early frames)')
 parser.add_argument('--labels', default='./Data_folder/labels', help='path to the images b (late frames)')
-parser.add_argument('--masks', default='./Data_folder/masks')
+parser.add_argument('--masks', default='./Data_folder/masks', help='path to masks a')
 parser.add_argument('--split', default=31, help='number of images for testing')
 parser.add_argument('--resolution', default=(1.6,1.6,1.6), help='new resolution to resample the all data')
 args = parser.parse_args()
@@ -197,7 +197,7 @@ if __name__ == "__main__":
 
         label_directory = os.path.join(str(save_directory_labels), str(i) + '.nii')
         image_directory = os.path.join(str(save_directory_images), str(i) + '.nii')
-        mask_directory = os.path.join(str(save_directory_masks), str(i) + 'nii')
+        mask_directory = os.path.join(str(save_directory_masks), str(i) + '.nii')
 
         sitk.WriteImage(image, image_directory)
         sitk.WriteImage(label, label_directory)

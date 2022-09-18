@@ -2,6 +2,7 @@ from models.pix2pix3D_model import Pix2Pix3DModel
 from .base_model import BaseModel
 from . import networks3D
 from .cycle_gan_model import CycleGANModel
+import torch
 
 
 class TestModel(BaseModel):
@@ -40,8 +41,12 @@ class TestModel(BaseModel):
 
     def set_input(self, input):
         # we need to use single_dataset mode
-        self.real_A = input.to(self.device)  # the torch tensor patch in the inference function
+        self.real_A = input[0].to(self.device)  # the torch tensor patch in the inference function
+        self.real_B = input[1].to(self.device)
+        self.mask_A = input[2].to(self.device)
         # self.image_paths = input['A_paths']
 
     def forward(self):
-        self.fake_B = self.netG(self.real_A)
+        mask_A_down = (self.mask_A - 0.5) / 0.5
+        self.fake_B = self.netG(torch.cat((self.mask_A, self.real_A), 1)) 
+        self.fake_B = self.fake_B * (self.mask_A) + self.real_A * (1 - self.mask_A)  

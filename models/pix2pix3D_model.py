@@ -33,7 +33,7 @@ class Pix2Pix3DModel(BaseModel):
         if is_train:
             # parser.set_defaults(pool_size=0, gan_mode='vanilla')  gan_mode should be equivalent to the no_lsgan option
             parser.set_defaults(pool_size=0)
-            parser.add_argument('--lambda_L1', type=float, default=100.0, help='weight for L1 loss')
+            parser.add_argument('--lambda_L1', type=float, default=1000.0, help='weight for L1 loss')
 
         return parser
 
@@ -57,10 +57,10 @@ class Pix2Pix3DModel(BaseModel):
         self.netG = networks3D.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG, opt.norm,
                                       not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
 
-        if self.isTrain:  # define a discriminator; conditional GANs need to take both input and output images; Therefore, #channels for D is input_nc + output_nc
+        if self.isTrain and not self.coarse:  # define a discriminator; conditional GANs need to take both input and output images; Therefore, #channels for D is input_nc + output_nc
             use_sigmoid = opt.no_lsgan
             use_linear = opt.global_disc
-            self.netD = networks3D.define_D(opt.input_nc + opt.output_nc, opt.ndf, opt.netD,
+            self.netD = networks3D.define_D(opt.input_nc, opt.ndf, opt.netD, # removed adding output_nc to input_nc
                                           opt.n_layers_D, opt.norm, use_sigmoid, opt.init_type, opt.init_gain, self.gpu_ids, use_linear)
 
         if self.isTrain:
@@ -85,24 +85,29 @@ class Pix2Pix3DModel(BaseModel):
         AtoB = self.opt.which_direction == 'AtoB'
         self.real_A = input[0 if AtoB else 1].to(self.device)
         self.real_B = input[1 if AtoB else 0].to(self.device)
-        self.mask = input[2].to(self.device)
-        print(self.mask.size())
+        self.mask_A = input[2].to(self.device)
+        # print(self.mask_A.size())
+        # print(torch.max(self.real_B))
+        # print(torch.min(self.real_B))
         # self.image_paths = input['A_paths' if AtoB else 'B_paths']
 
     def forward(self):
         """Run forward pass; called by both functions <optimize_parameters> and <test>."""
-        self.fake_B = self.netG(self.real_A)  # G(A)
+        mask_A_down = (self.mask_A - 0.5) / 0.5
+        self.fake_B = self.netG(torch.cat((mask_A_down, self.real_A), 1))  # G(A)
 
     def backward_D(self):
         """Calculate GAN loss for the discriminator"""
         # Fake; stop backprop to the generator by detaching fake_B
-        fake_AB = torch.cat((self.real_A, self.fake_B), 1)  # we use conditional GANs; we need to feed both input and output to the discriminator
+        # fake_AB = torch.cat((self.real_A, self.fake_B), 1)  # we use conditional GANs; we need to feed both input and output to the discriminator
+        fake_AB = torch.cat((self.mask_A, self.fake_B), 1)
         # print(fake_AB.size())
         pred_fake = self.netD(fake_AB.detach())
         # print(pred_fake.size())
         self.loss_D_fake = self.criterionGAN(pred_fake, False)
         # Real
-        real_AB = torch.cat((self.real_A, self.real_B), 1)
+        # real_AB = torch.cat((self.real_A, self.real_B), 1)
+        real_AB = torch.cat((self.mask_A, self.real_B), 1)
         pred_real = self.netD(real_AB)
         self.loss_D_real = self.criterionGAN(pred_real, True)
         # combine loss and calculate gradients
@@ -112,25 +117,36 @@ class Pix2Pix3DModel(BaseModel):
     def backward_G(self):
         """Calculate GAN and L1 loss for the generator"""
         # First, G(A) should fake the discriminator
-        fake_AB = torch.cat((self.real_A, self.fake_B), 1)
-        pred_fake = self.netD(fake_AB)
-        # print(pred_fake.size())
-        self.loss_G_GAN = self.criterionGAN(pred_fake, True)
+        # fake_AB = torch.cat((self.real_A, self.fake_B), 1)
+        if not self.coarse:
+            fake_AB = torch.cat((self.mask_A, self.fake_B), 1)
+            pred_fake = self.netD(fake_AB)
+            # print(pred_fake.size())
+            self.loss_G_GAN = self.criterionGAN(pred_fake, True)
         # Second, G(A) = B
         self.loss_G_L1 = self.criterionL1(self.fake_B, self.real_B) * self.opt.lambda_L1
         # combine loss and calculate gradients
-        self.loss_G = self.loss_G_GAN + self.loss_G_L1
+        if not self.coarse:
+            self.loss_G = self.loss_G_GAN + self.loss_G_L1
+        else: 
+            self.loss_G = self.loss_G_L1
         self.loss_G.backward()
 
     def optimize_parameters(self):
         self.forward()                   # compute fake images: G(A)
-        # update D
-        self.set_requires_grad(self.netD, True)  # enable backprop for D
-        self.optimizer_D.zero_grad()     # set D's gradients to zero
-        self.backward_D()                # calculate gradients for D
-        self.optimizer_D.step()          # update D's weights
+        self.fake_B = self.fake_B * (self.mask_A) + self.real_A * (1 - self.mask_A)  # blended image
+        if not self.coarse:
+            self.mask_A = (self.mask_A - 0.5)/0.5 # FIX THIS
+            # self.fake_B = self.real_A * (1 - (self.mask_A/255))  # blended image
+            # print(torch.max(self.mask_A.detach()))
+            # print(torch.min(self.mask_A.detach()))
+            # update D
+            self.set_requires_grad(self.netD, True)  # enable backprop for D
+            self.optimizer_D.zero_grad()     # set D's gradients to zero
+            self.backward_D()                # calculate gradients for D
+            self.optimizer_D.step()          # update D's weights
         # update G
-        self.set_requires_grad(self.netD, False)  # D requires no gradients when optimizing G
+            self.set_requires_grad(self.netD, False)  # D requires no gradients when optimizing G
         self.optimizer_G.zero_grad()        # set G's gradients to zero
         self.backward_G()                   # calculate graidents for G
         self.optimizer_G.step()             # udpate G's weights

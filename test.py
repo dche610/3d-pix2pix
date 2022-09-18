@@ -25,6 +25,7 @@ def prepare_batch(image, ijk_patch_indices):
         image_batch = []
         for patch in batch:
             image_patch = image[patch[0]:patch[1], patch[2]:patch[3], patch[4]:patch[5]]
+            # mask_patch = mask[patch[0]:patch[1], patch[2]:patch[3], patch[4]:patch[5]]
             image_batch.append(image_patch)
 
         image_batch = np.asarray(image_batch)
@@ -35,7 +36,7 @@ def prepare_batch(image, ijk_patch_indices):
 
 
 # inference single image
-def inference(model, image_path, result_path, resample, resolution, patch_size_x,
+def inference(model, image_path, mask_path, true_label_path, result_path, resample, resolution, patch_size_x,
               patch_size_y, patch_size_z, stride_inplane, stride_layer, batch_size=1):
 
     # create transformations to image and labels
@@ -52,12 +53,26 @@ def inference(model, image_path, result_path, resample, resolution, patch_size_x
     reader.SetFileName(image_path)
     image = reader.Execute()
 
+    reader = sitk.ImageFileReader()
+    reader.SetFileName(mask_path)
+    mask = reader.Execute()
+
+    reader = sitk.ImageFileReader()
+    reader.SetFileName(true_label_path)
+    true_label = reader.Execute()
+
     # normalize the image
     image = Normalization(image)
+    # mask = Normalization(mask)
+    true_label = Normalization(true_label)
+
+    # print(mask)
 
     castImageFilter = sitk.CastImageFilter()
     castImageFilter.SetOutputPixelType(sitk.sitkFloat32)
     image = castImageFilter.Execute(image)
+    mask = castImageFilter.Execute(mask)
+    true_label = castImageFilter.Execute(true_label)
 
     # create empty label in pair with transformed image
     label_tfm = sitk.Image(image.GetSize(), sitk.sitkFloat32)
@@ -66,6 +81,7 @@ def inference(model, image_path, result_path, resample, resolution, patch_size_x
     label_tfm.SetSpacing(image.GetSpacing())
 
     sample = {'image': image, 'label': label_tfm}
+    # print(sample['image'])
 
     for transform in transforms1:
         sample = transform(sample)
@@ -81,17 +97,21 @@ def inference(model, image_path, result_path, resample, resolution, patch_size_x
     for transform in transforms2:
         sample = transform(sample)
 
-    image_tfm, label_tfm = sample['image'], sample['label']
+    image_tfm, label_tfm, mask_tfm = sample['image'], sample['label'], mask
 
     # convert image to numpy array
     image_np = sitk.GetArrayFromImage(image_tfm)
     label_np = sitk.GetArrayFromImage(label_tfm)
+    mask_np = sitk.GetArrayFromImage(mask_tfm)
+    true_label_np = sitk.GetArrayFromImage(true_label)
 
     label_np = np.asarray(label_np, np.float32)
 
     # unify numpy and sitk orientation
     image_np = np.transpose(image_np, (2, 1, 0))
     label_np = np.transpose(label_np, (2, 1, 0))
+    mask_np = np.transpose(mask_np, (2, 1, 0))
+    true_label_np = np.transpose(true_label_np, (2, 1, 0))
 
     # ----------------- Padding the image if the z dimension still is not even ----------------------
 
@@ -100,6 +120,8 @@ def inference(model, image_path, result_path, resample, resolution, patch_size_x
     else:
         image_np = np.pad(image_np, ((0, 0), (0, 0), (0, 1)), 'edge')
         label_np = np.pad(label_np, ((0, 0), (0, 0), (0, 1)), 'edge')
+        mask_np = np.pad(mask_np, ((0, 0), (0, 0), (0, 1)), 'edge')
+        true_label_np = np.pad(true_label_np, ((0, 0), (0, 0), (0, 1)), 'edge')
         Padding = True
 
     # ------------------------------------------------------------------------------------------------
@@ -145,79 +167,129 @@ def inference(model, image_path, result_path, resample, resolution, patch_size_x
                 patch_total += 1
 
     batches = prepare_batch(image_np, ijk_patch_indices)
-    # print(len(batches))
+    print(len(batches))
 
     for i in tqdm(range(len(batches))):
         batch = batches[i]
-        print(len(batch))
+        # print(len(batch))
+        # print(np.mean(batch[0]))
+        # print(np.mean(batch[1]))
 
         batch = (batch - 127.5) / 127.5
+        # mask_np = (mask_np - 127.5) / 127.5
+        true_label_np = (true_label_np - 127.5) / 127.5
+        # print(np.max(batch[0]))
+        # print(np.max(batch[1]))
 
+        # batch[0] = torch.from_numpy(batch[0][np.newaxis, :, :, :])
+        # batch[1] = torch.from_numpy(batch[1][np.newaxis, :, :, :])
         batch = torch.from_numpy(batch[np.newaxis, :, :, :])
-        # print(batch[0])
+        mask_batch = torch.from_numpy(mask_np[np.newaxis, np.newaxis, :, :, :])
+        label_batch = torch.from_numpy(label_np[np.newaxis, np.newaxis, :, :, :])
+        # print(type(batch[0]))
+        
+        # print(batch[1, :, :, :].size())
+        # print(batch[1].size())    
         batch = Variable(batch.cuda())
+        mask_batch = Variable(mask_batch.cuda())
+        label_batch = Variable(label_batch.cuda())
+        # batch[1] = Variable(batch[1].cuda())
+        batch_total = [batch, label_batch, mask_batch]
 
-        # pred = model(batch)
-        # print(batch)
-        model.set_input(batch)
-        model.test()
-        pred = model.get_current_visuals()
-        pred = pred['fake_B']
-        pred = pred.squeeze().data.cpu().numpy()
-
-        pred = (pred * 127.5) + 127.5
-
-        istart = ijk_patch_indices[i][0][0]
-        iend = ijk_patch_indices[i][0][1]
-        jstart = ijk_patch_indices[i][0][2]
-        jend = ijk_patch_indices[i][0][3]
-        kstart = ijk_patch_indices[i][0][4]
-        kend = ijk_patch_indices[i][0][5]
-        label_np[istart:iend, jstart:jend, kstart:kend] += pred[:, :, :]
-        weight_np[istart:iend, jstart:jend, kstart:kend] += 1.0
-
-    print("{}: Evaluation complete".format(datetime.datetime.now()))
-
-    # eliminate overlapping region using the weighted value
-    label_np = (np.float32(label_np) / np.float32(weight_np) + 0.01)
-
-    # removed the 1 pad on z
-    if Padding is True:
-        label_np = label_np[:, :, 0:(label_np.shape[2] - 1)]
-
-    # removed all the padding
-    label_np = label_np[:pad_x, :pad_y, :pad_z]
-
-    # convert back to sitk space
-    label = from_numpy_to_itk(label_np, image_pre_pad)
-    # ---------------------------------------------------------------------------------------------
-
-    # save label
-    writer = sitk.ImageFileWriter()
-
-    if resample is True:
-        print("{}: Resampling label back to original image space...".format(datetime.datetime.now()))
-        # label = resample_sitk_image(label, spacing=image.GetSpacing(), interpolator='bspline')   # keep this commented
-
-        label = resize(label, (sitk.GetArrayFromImage(image)).shape[::-1], sitk.sitkLinear)
-        label.SetDirection(image.GetDirection())
-        label.SetOrigin(image.GetOrigin())
-        label.SetSpacing(image.GetSpacing())
-    else:
-        label = label
-
-    writer.SetFileName(result_path)
-    writer.Execute(label)
-    print("{}: Save evaluate label at {} success".format(datetime.datetime.now(), result_path))
+    return batch_total 
 
 
 if __name__ == '__main__':
 
     opt = TestOptions().parse()
 
+    test_set = NifitDataSet(opt.val_path, which_direction='AtoB', transforms=None, shuffle_labels=False, test=True)
+    print('length test list:', len(test_set))
+    test_loader = DataLoader(test_set, batch_size=1, shuffle=False, num_workers=opt.workers, pin_memory=True)  # Here are then fed to the network with a defined batch size
+
     model = create_model(opt)
     model.setup(opt)
 
-    inference(model, opt.image, opt.result, opt.resample, opt.new_resolution, opt.patch_size[0],
-              opt.patch_size[1], opt.patch_size[2], opt.stride_inplane, opt.stride_layer, 1)
+    directory = './Data_folder/test/images'
+    image_paths = [os.path.join(directory, file) for file in os.listdir(directory)]
 
+    result_path = opt.result
+
+    for i, data in enumerate(test_loader):
+        reader = sitk.ImageFileReader()
+        reader.SetFileName(image_paths[i])
+        image = reader.Execute()
+        model.set_input(data)
+        model.test()
+        pred = model.get_current_visuals()
+        pred = pred['fake_B']
+        pred = pred.squeeze().data.cpu().numpy()
+        pred = (pred * 127.5) + 127.5
+        label = from_numpy_to_itk(pred, image)
+        writer = sitk.ImageFileWriter()
+        writer.SetFileName(result_path+'/'+str(i)+'.nii')
+        writer.Execute(label)
+        print("{}: Save evaluate label at {} success".format(datetime.datetime.now(), result_path+'/'+str(i)+'.nii'))
+
+
+
+    # inference(model, opt.image, opt.mask, opt.true_label, opt.result, opt.resample, opt.new_resolution, opt.patch_size[0],
+    #           opt.patch_size[1], opt.patch_size[2], opt.stride_inplane, opt.stride_layer, 1)
+
+        # print(batch.size())
+        # print(mask_batch.size())
+
+        # pred = model(batch)
+        # print(batch)
+        # model.set_input(batch_total)
+        # model.test()
+        # pred = model.get_current_visuals()
+        # pred = pred['fake_B']
+        # pred = pred.squeeze().data.cpu().numpy()
+        # pred = (pred * 127.5) + 127.5
+
+        # label = from_numpy_to_itk(label_np, image_pre_pad)
+
+
+        # istart = ijk_patch_indices[i][0][0]
+        # iend = ijk_patch_indices[i][0][1]
+        # jstart = ijk_patch_indices[i][0][2]
+        # jend = ijk_patch_indices[i][0][3]
+        # kstart = ijk_patch_indices[i][0][4]
+        # kend = ijk_patch_indices[i][0][5]
+        # label_np[istart:iend, jstart:jend, kstart:kend] += pred[:, :, :]
+        # weight_np[istart:iend, jstart:jend, kstart:kend] += 1.0
+
+    # print("{}: Evaluation complete".format(datetime.datetime.now()))
+
+    # eliminate overlapping region using the weighted value
+    # label_np = (np.float32(label_np) / np.float32(weight_np) + 0.01)
+
+    # removed the 1 pad on z
+    # if Padding is True:
+    #     label_np = label_np[:, :, 0:(label_np.shape[2] - 1)]
+
+    # removed all the padding
+    # label_np = label_np[:pad_x, :pad_y, :pad_z]
+
+    # convert back to sitk space
+    # label = from_numpy_to_itk(label_np, image_pre_pad)
+    # ---------------------------------------------------------------------------------------------
+
+    # save label
+    # writer = sitk.ImageFileWriter()
+
+    # if resample is True:
+    #     print("{}: Resampling label back to original image space...".format(datetime.datetime.now()))
+    #     # label = resample_sitk_image(label, spacing=image.GetSpacing(), interpolator='bspline')   # keep this commented
+
+    #     label = resize(label, (sitk.GetArrayFromImage(image)).shape[::-1], sitk.sitkLinear)
+    #     label.SetDirection(image.GetDirection())
+    #     label.SetOrigin(image.GetOrigin())
+    #     label.SetSpacing(image.GetSpacing())
+    # else:
+    #     label = label
+
+    # writer.SetFileName(result_path)
+    # writer.Execute(label)
+    # print("{}: Save evaluate label at {} success".format(datetime.datetime.now(), result_path))

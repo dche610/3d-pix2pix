@@ -14,7 +14,7 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--niter', type=int, default=200, help='# of iter at starting learning rate')
         parser.add_argument('--niter_decay', type=int, default=200, help='# of iter to linearly decay learning rate to zero')
         parser.add_argument('--beta1', type=float, default=0.5, help='momentum term of adam')
-        parser.add_argument('--lr', type=float, default=0.0002, help='initial learning rate for adam')
+        parser.add_argument('--lr', type=float, default=0.0004, help='initial learning rate for adam')
         parser.add_argument('--no_lsgan', default=False, action='store_false', help='do *not* use least square GAN, if false, use vanilla GAN')
         parser.add_argument('--global_disc', default=True, action='store_true', help='use global discriminator')        
         parser.add_argument('--pool_size', type=int, default=50, help='the size of image buffer that stores previously generated images')
