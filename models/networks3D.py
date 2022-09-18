@@ -5,6 +5,8 @@ import functools
 from torch.optim import lr_scheduler
 import monai
 
+device = torch.device("cuda")
+
 ###############################################################################
 # Helper Functions
 ###############################################################################
@@ -15,7 +17,7 @@ def get_norm_layer(norm_type='instance'):
         norm_layer = functools.partial(nn.BatchNorm3d, affine=True)
     elif norm_type == 'instance':
         norm_layer = functools.partial(nn.InstanceNorm3d, affine=False, track_running_stats=True)
-    elif norm_type == 'none':
+    elif norm_type == 'none' or norm_type == 'spectral':
         norm_layer = None
     else:
         raise NotImplementedError('normalization layer [%s] is not found' % norm_type)
@@ -119,25 +121,37 @@ def define_D(input_nc, ndf, netD,
 # but it abstracts away the need to create the target label tensor
 # that has the same size as the input
 class GANLoss(nn.Module):
-    def __init__(self, use_lsgan=True, target_real_label=1.0, target_fake_label=0.0):
+    def __init__(self, type='lsgan', target_real_label=1.0, target_fake_label=0.0):
         super(GANLoss, self).__init__()
-        self.register_buffer('real_label', torch.tensor(target_real_label))
-        self.register_buffer('fake_label', torch.tensor(target_fake_label))
-        if use_lsgan:
-            self.loss = nn.MSELoss()
-        else:
-            self.loss = nn.BCELoss()
+        self.type = type
+        self.register_buffer('real_label', torch.tensor(target_real_label).to(device))
+        self.register_buffer('fake_label', torch.tensor(target_fake_label).to(device))
 
-    def get_target_tensor(self, input, target_is_real):
-        if target_is_real:
-            target_tensor = self.real_label
-        else:
-            target_tensor = self.fake_label
-        return target_tensor.expand_as(input)
+        if type == 'nsgan':
+            self.criterion = nn.BCELoss()
 
-    def __call__(self, input, target_is_real):
-        target_tensor = self.get_target_tensor(input, target_is_real)
-        return self.loss(input, target_tensor)
+        elif type == 'lsgan':
+            self.criterion = nn.MSELoss()
+
+        elif type == 'hinge':
+            self.criterion = nn.ReLU()
+
+        elif type == 'l1':
+            self.criterion = nn.L1Loss()
+
+    def __call__(self, outputs, is_real, is_disc=None):
+        if self.type == 'hinge':
+            if is_disc:
+                if is_real:
+                    outputs = -outputs
+                return self.criterion(1 + outputs).mean()
+            else:
+                return (-outputs).mean()
+
+        else:
+            labels = (self.real_label if is_real else self.fake_label).expand_as(outputs)
+            loss = self.criterion(outputs, labels)
+            return loss
 
 
 '''
@@ -376,33 +390,53 @@ class NLayerDiscriminator(nn.Module):
 
         kw = 4
         padw = 1
-        sequence = [
-            nn.Conv3d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw),
-            nn.LeakyReLU(0.2, True)
-        ]
+        if norm_layer == 'spectral':
+            sequence = [
+                nn.utils.spectral_norm(nn.Conv3d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw)),
+                nn.LeakyReLU(0.2, True)
+            ]
+        else: 
+            sequence = [
+                nn.Conv3d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw),
+                nn.LeakyReLU(0.2, True)
+            ]
 
         nf_mult = 1
         nf_mult_prev = 1
         for n in range(1, n_layers):
             nf_mult_prev = nf_mult
             nf_mult = min(2**n, 8)
-            sequence += [
-                nn.Conv3d(ndf * nf_mult_prev, ndf * nf_mult,
-                          kernel_size=kw, stride=2, padding=padw, bias=use_bias),
-                norm_layer(ndf * nf_mult),
-                nn.LeakyReLU(0.2, True)
-            ]
+            if norm_layer == 'spectral': 
+                sequence += [
+                    nn.utils.spectral_norm(nn.Conv3d(ndf * nf_mult_prev, ndf * nf_mult),
+                            kernel_size=kw, stride=2, padding=padw, bias=use_bias),
+                    nn.LeakyReLU(0.2, True)
+                ]
+            else:
+                sequence += [
+                    nn.Conv3d(ndf * nf_mult_prev, ndf * nf_mult,
+                            kernel_size=kw, stride=2, padding=padw, bias=use_bias),
+                    norm_layer(ndf * nf_mult),
+                    nn.LeakyReLU(0.2, True)
+                ]
 
         if not use_linear:
             nf_mult_prev = nf_mult
             nf_mult = min(2**n_layers, 8)
-            sequence += [
-                nn.Conv3d(ndf * nf_mult_prev, ndf * nf_mult,
-                        kernel_size=kw, stride=1, padding=padw, bias=use_bias),
-                norm_layer(ndf * nf_mult),
-                nn.LeakyReLU(0.2, True)
-            ]
-
+            if norm_layer == 'spectral': 
+                sequence += [
+                    nn.utils.spectral_norm(nn.Conv3d(ndf * nf_mult_prev, ndf * nf_mult),
+                            kernel_size=kw, stride=1, padding=padw, bias=use_bias),
+                    nn.LeakyReLU(0.2, True)
+                ]
+            else:
+                sequence += [
+                    nn.Conv3d(ndf * nf_mult_prev, ndf * nf_mult,
+                            kernel_size=kw, stride=1, padding=padw, bias=use_bias),
+                    norm_layer(ndf * nf_mult),
+                    nn.LeakyReLU(0.2, True)
+                ]
+            
             sequence += [nn.Conv3d(ndf * nf_mult, 1, kernel_size=kw, stride=1, padding=padw)]
 
 

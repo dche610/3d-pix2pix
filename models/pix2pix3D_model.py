@@ -29,7 +29,7 @@ class Pix2Pix3DModel(BaseModel):
         By default, we use vanilla GAN loss, UNet with batchnorm, and aligned datasets.
         """
         # changing the default values to match the pix2pix paper (https://phillipi.github.io/pix2pix/)
-        parser.set_defaults(norm='batch', netG='unet_128', dataset_mode='aligned')  # CHANGED
+        parser.set_defaults(norm='spectral', netG='unet_128', dataset_mode='aligned')  # CHANGED
         if is_train:
             # parser.set_defaults(pool_size=0, gan_mode='vanilla')  gan_mode should be equivalent to the no_lsgan option
             parser.set_defaults(pool_size=0)
@@ -65,7 +65,7 @@ class Pix2Pix3DModel(BaseModel):
 
         if self.isTrain:
             # define loss functions
-            self.criterionGAN = networks3D.GANLoss(use_lsgan=not opt.no_lsgan).to(self.device)
+            self.criterionGAN = networks3D.GANLoss(type=opt.gan).to(self.device)
             self.criterionL1 = torch.nn.L1Loss()
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
             self.optimizer_G = torch.optim.Adam(self.netG.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
