@@ -22,11 +22,11 @@ Packages can be installed with "pip install -r requirements.txt"
 
 - models_folder: the folder contains the scripts with the networks.
 
-- evaluation.py: 
+- evaluation.py: script to calculate metrics for network output. 
 
 - train.py: Runs the training. (Set the base/train options first)
 
-- test.py: It launches the inference on a single input image chosen by the user. (Set the base/train options first)
+- test.py: It launches the inference on a folder of images chosen by the user. (Set the base/train options first)
 *******************************************************************************
 ## Usage
 ### Folders structure:
