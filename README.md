@@ -8,21 +8,17 @@ Pytorch pipeline for 3D image inpainting using Pix2Pix, with paired examples. Th
 ## Requirements
 Packages can be installed with "pip install -r requirements.txt"
 *******************************************************************************
-## Python scripts and their function
+## Important python scripts and their function
 
-- organize_folder_structure.py: Organize the data in the folder structure (training,testing) for the network.
+- options/base_options.py: List of base_options used to train/test the network.  
 
-- options_folder/base_options.py: List of base_options used to train/test the network.  
+- options/train_options.py: List of specific options used to train the network.
 
-- options_folder/train_options.py: List of specific options used to train the network.
+- options/test_options.py: List of options used to test the network.
 
-- options_folder/test_options.py: List of options used to test the network.
+- utils: contains the Nifti_Dataset Dataloader and augmentation functions to read and augment the data, as well as data preprocessing functions. 
 
-- utils_folder: contains the Nifti_Dataset Dataloader and augmentation functions to read and augment the data, as well as data preprocessing functions. 
-
-- models_folder: the folder contains the scripts with the networks.
-
-- evaluation.py: script to calculate metrics for network output. 
+- models: the folder contains the scripts with the networks.
 
 - train.py: Runs the training. (Set the base/train options first)
 
