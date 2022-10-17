@@ -85,8 +85,7 @@ by loading them and setting the correspondent epoch.
 - To train with a second discriminator, uncomment the commented lines in file models/pix2pix_3D_model.py and make sure to comment the lines that train with a single discriminator. 
 *******************************************************************************
 ### Inference:
-Launch "test.py" to test the network. Modify the parameters in the test_options parse section to select the path of image to infer and result. First you have to rename the weights "latest_net_GA" in:
-"latest_net_G" to go from images (masked) to labels (inpainted).
+Launch "test.py" to test the network. Modify the parameters in the test_options parse section to select the path of image to infer and result.
 
 *******************************************************************************
 
