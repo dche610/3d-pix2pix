@@ -29,7 +29,7 @@ class BaseOptions():
         parser.add_argument('--netG', type=str, default='unet_128', help='selects model to use for netG. Look on Networks3D to see the all list')
 
         parser.add_argument('--gpu_ids', default='3', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
-        parser.add_argument('--name', type=str, default='test_save_lsgan_run_4', help='name of the experiment. It decides where to store samples and models')
+        parser.add_argument('--name', type=str, default='test_save_lsgan_run_3', help='name of the experiment. It decides where to store samples and models')
         parser.add_argument('--model', type=str, default='pix2pix3D', help='chooses which model to use. cycle_gan')
         parser.add_argument('--coarse', default=False, action='store_true', help='coarse or refinement network')
         parser.add_argument('--gated', default=False, action='store_true', help='use gated convolutions in generator')
