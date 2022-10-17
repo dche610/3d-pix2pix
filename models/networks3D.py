@@ -3,6 +3,7 @@ import torch.nn as nn
 from torch.nn import init
 import functools
 from torch.optim import lr_scheduler
+from .blocks import GatedConv, GatedDeconv
 import monai
 
 device = torch.device("cuda")
@@ -13,7 +14,7 @@ device = torch.device("cuda")
 
 
 def get_norm_layer(norm_type='instance'):
-    if norm_type == 'batch':
+    if norm_type == 'batch' or norm_type == 'spectral':
         norm_layer = functools.partial(nn.BatchNorm3d, affine=True)
     elif norm_type == 'instance':
         norm_layer = functools.partial(nn.InstanceNorm3d, affine=False, track_running_stats=True)
@@ -74,7 +75,7 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=[]):
     return net
 
 
-def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, init_type='normal', init_gain=0.02, gpu_ids=[]):
+def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, init_type='normal', init_gain=0.02, gpu_ids=[], gated=False):
     net = None
     norm_layer = get_norm_layer(norm_type=norm)
 
@@ -83,9 +84,9 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
     elif netG == 'resnet_6blocks':
         net = ResnetGenerator(input_nc, output_nc, ngf, norm_layer=norm_layer, use_dropout=use_dropout, n_blocks=6)
     elif netG == 'unet_custom':
-        net = UnetGenerator(input_nc, output_nc, 5, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
+        net = UnetGenerator(input_nc, output_nc, 5, ngf, norm_layer=norm_layer, use_dropout=use_dropout, gated=gated)
     elif netG == 'unet_128':
-        net = UnetGenerator(input_nc, output_nc, 7, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
+        net = UnetGenerator(input_nc, output_nc, 7, ngf, norm_layer=norm_layer, use_dropout=use_dropout, gated=gated)
     elif netG == 'unet_256':
         net = UnetGenerator(input_nc, output_nc, 8, ngf, norm_layer=norm_layer, use_dropout=use_dropout)
     elif netG == 'Dynet':
@@ -96,14 +97,14 @@ def define_G(input_nc, output_nc, ngf, netG, norm='batch', use_dropout=False, in
 
 
 def define_D(input_nc, ndf, netD,
-             n_layers_D=3, norm='batch', use_sigmoid=False, init_type='normal', init_gain=0.02, gpu_ids=[], use_linear=True):
+             n_layers_D=3, norm='batch', use_sigmoid=False, init_type='normal', init_gain=0.02, gpu_ids=[], spectral=True, use_linear=True):
     net = None
     norm_layer = get_norm_layer(norm_type=norm)
 
     if netD == 'basic':
         net = NLayerDiscriminator(input_nc, ndf, n_layers=3, norm_layer=norm_layer, use_sigmoid=use_sigmoid, use_linear=use_linear)
     elif netD == 'n_layers':
-        net = NLayerDiscriminator(input_nc, ndf, n_layers_D, norm_layer=norm_layer, use_sigmoid=use_sigmoid, use_linear=use_linear)
+        net = NLayerDiscriminator(input_nc, ndf, n_layers_D, norm_layer=norm_layer, spectral=spectral, use_sigmoid=use_sigmoid, use_linear=use_linear)
     elif netD == 'pixel':
         net = PixelDiscriminator(input_nc, ndf, norm_layer=norm_layer, use_sigmoid=use_sigmoid)
     else:
@@ -271,17 +272,17 @@ class ResnetBlock(nn.Module):
 # at the bottleneck
 class UnetGenerator(nn.Module):
     def __init__(self, input_nc, output_nc, num_downs, ngf=64,
-                 norm_layer=nn.BatchNorm3d, use_dropout=False):
+                 norm_layer=nn.BatchNorm3d, use_dropout=False, gated=False):
         super(UnetGenerator, self).__init__()
 
         # construct unet structure
-        unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, input_nc=None, submodule=None, norm_layer=norm_layer, innermost=True)
+        unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, input_nc=None, submodule=None, norm_layer=norm_layer, innermost=True, gated=gated)
         for i in range(num_downs - 5):
-            unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, input_nc=None, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout)
-        unet_block = UnetSkipConnectionBlock(ngf * 4, ngf * 8, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
-        unet_block = UnetSkipConnectionBlock(ngf * 2, ngf * 4, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
-        unet_block = UnetSkipConnectionBlock(ngf, ngf * 2, input_nc=None, submodule=unet_block, norm_layer=norm_layer)
-        unet_block = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc, submodule=unet_block, outermost=True, norm_layer=norm_layer)
+            unet_block = UnetSkipConnectionBlock(ngf * 8, ngf * 8, input_nc=None, submodule=unet_block, norm_layer=norm_layer, use_dropout=use_dropout, gated=gated)
+        unet_block = UnetSkipConnectionBlock(ngf * 4, ngf * 8, input_nc=None, submodule=unet_block, norm_layer=norm_layer, gated=gated)
+        unet_block = UnetSkipConnectionBlock(ngf * 2, ngf * 4, input_nc=None, submodule=unet_block, norm_layer=norm_layer, gated=gated)
+        unet_block = UnetSkipConnectionBlock(ngf, ngf * 2, input_nc=None, submodule=unet_block, norm_layer=norm_layer, gated=gated)
+        unet_block = UnetSkipConnectionBlock(output_nc, ngf, input_nc=input_nc, submodule=unet_block, outermost=True, norm_layer=norm_layer, gated=gated)
 
         self.model = unet_block
 
@@ -294,7 +295,7 @@ class UnetGenerator(nn.Module):
 #   |-- downsampling -- |submodule| -- upsampling --|
 class UnetSkipConnectionBlock(nn.Module):
     def __init__(self, outer_nc, inner_nc, input_nc=None,
-                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False):
+                 submodule=None, outermost=False, innermost=False, norm_layer=nn.BatchNorm2d, use_dropout=False, gated=False):
         super(UnetSkipConnectionBlock, self).__init__()
         self.outermost = outermost
         if type(norm_layer) == functools.partial:
@@ -303,31 +304,50 @@ class UnetSkipConnectionBlock(nn.Module):
             use_bias = norm_layer == nn.InstanceNorm2d
         if input_nc is None:
             input_nc = outer_nc
-        downconv = nn.Conv3d(input_nc, inner_nc, kernel_size=4,
-                             stride=2, padding=1, bias=use_bias)
+        if gated == True:
+            downconv = GatedConv(input_nc, inner_nc, kernel_size=4,
+                                stride=2, padding=1, bias=use_bias)
+        else: 
+            downconv = nn.Conv3d(input_nc, inner_nc, kernel_size=4,
+                                stride=2, padding=1, bias=use_bias)
         downrelu = nn.LeakyReLU(0.2, True)
         downnorm = norm_layer(inner_nc)
         uprelu = nn.ReLU(True)
         upnorm = norm_layer(outer_nc)
 
         if outermost:
-            upconv = nn.ConvTranspose3d(inner_nc * 2, outer_nc,
-                                        kernel_size=4, stride=2,
-                                        padding=1)
+            if gated == True:
+                upconv = GatedDeconv(inner_nc * 2, outer_nc,
+                                            kernel_size=4, stride=2,
+                                            padding=1)
+            else: 
+                upconv = nn.ConvTranspose3d(inner_nc * 2, outer_nc,
+                                kernel_size=4, stride=2,
+                                padding=1)
             down = [downconv]
             up = [uprelu, upconv, nn.Tanh()]
             model = down + [submodule] + up
         elif innermost:
-            upconv = nn.ConvTranspose3d(inner_nc, outer_nc,
-                                        kernel_size=4, stride=2,
-                                        padding=1, bias=use_bias)
+            if gated == True:
+                upconv = GatedDeconv(inner_nc, outer_nc,
+                                            kernel_size=4, stride=2,
+                                            padding=1, bias=use_bias)
+            else: 
+                upconv = nn.ConvTranspose3d(inner_nc, outer_nc,
+                                kernel_size=4, stride=2,
+                                padding=1, bias=use_bias)
             down = [downrelu, downconv]
             up = [uprelu, upconv, upnorm]
             model = down + up
         else:
-            upconv = nn.ConvTranspose3d(inner_nc * 2, outer_nc,
-                                        kernel_size=4, stride=2,
-                                        padding=1, bias=use_bias)
+            if gated == True:
+                upconv = GatedDeconv(inner_nc * 2, outer_nc,
+                                            kernel_size=4, stride=2,
+                                            padding=1, bias=use_bias)
+            else:
+                upconv = nn.ConvTranspose3d(inner_nc * 2, outer_nc,
+                                kernel_size=4, stride=2,
+                                padding=1, bias=use_bias)
             down = [downrelu, downconv, downnorm]
             up = [uprelu, upconv, upnorm]
 
@@ -381,7 +401,7 @@ def Dynet():
 
 # Defines the PatchGAN discriminator with the specified arguments.
 class NLayerDiscriminator(nn.Module):
-    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm3d, use_sigmoid=False, use_linear=True):
+    def __init__(self, input_nc, ndf=64, n_layers=3, norm_layer=nn.BatchNorm3d, spectral=False, use_sigmoid=False, use_linear=True):
         super(NLayerDiscriminator, self).__init__()
         if type(norm_layer) == functools.partial:
             use_bias = norm_layer.func == nn.InstanceNorm3d
@@ -390,7 +410,7 @@ class NLayerDiscriminator(nn.Module):
 
         kw = 4
         padw = 1
-        if norm_layer == 'spectral':
+        if spectral == True:
             sequence = [
                 nn.utils.spectral_norm(nn.Conv3d(input_nc, ndf, kernel_size=kw, stride=2, padding=padw)),
                 nn.LeakyReLU(0.2, True)
@@ -406,10 +426,10 @@ class NLayerDiscriminator(nn.Module):
         for n in range(1, n_layers):
             nf_mult_prev = nf_mult
             nf_mult = min(2**n, 8)
-            if norm_layer == 'spectral': 
+            if spectral == True:
                 sequence += [
-                    nn.utils.spectral_norm(nn.Conv3d(ndf * nf_mult_prev, ndf * nf_mult),
-                            kernel_size=kw, stride=2, padding=padw, bias=use_bias),
+                    nn.utils.spectral_norm(nn.Conv3d(ndf * nf_mult_prev, ndf * nf_mult,
+                            kernel_size=kw, stride=2, padding=padw, bias=use_bias)),
                     nn.LeakyReLU(0.2, True)
                 ]
             else:
@@ -423,10 +443,10 @@ class NLayerDiscriminator(nn.Module):
         if not use_linear:
             nf_mult_prev = nf_mult
             nf_mult = min(2**n_layers, 8)
-            if norm_layer == 'spectral': 
+            if spectral == True: 
                 sequence += [
-                    nn.utils.spectral_norm(nn.Conv3d(ndf * nf_mult_prev, ndf * nf_mult),
-                            kernel_size=kw, stride=1, padding=padw, bias=use_bias),
+                    nn.utils.spectral_norm(nn.Conv3d(ndf * nf_mult_prev, ndf * nf_mult,
+                            kernel_size=kw, stride=1, padding=padw, bias=use_bias)),
                     nn.LeakyReLU(0.2, True)
                 ]
             else:
@@ -444,7 +464,8 @@ class NLayerDiscriminator(nn.Module):
             sequence += [nn.Sigmoid()]
 
         if use_linear: 
-            sequence += [nn.Flatten(), nn.Linear(64*512, 1)]
+            # sequence += [nn.Flatten(), nn.Linear(16*16*16*256, 1)] # n_layer = 3
+            sequence += [nn.Flatten(), nn.Linear(64*512, 1)] # n_layer = 5
 
         self.model = nn.Sequential(*sequence)
 

@@ -33,7 +33,7 @@ class TestModel(BaseModel):
         self.model_names = ['G' + opt.model_suffix]
 
         self.netG = networks3D.define_G(opt.input_nc, opt.output_nc, opt.ngf, opt.netG,
-                                      opt.norm, not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids)
+                                      opt.norm, not opt.no_dropout, opt.init_type, opt.init_gain, self.gpu_ids, opt.gated)
 
         # assigns the model to self.netG_[suffix] so that it can be loaded
         # please see BaseModel.load_networks
@@ -48,5 +48,5 @@ class TestModel(BaseModel):
 
     def forward(self):
         mask_A_down = (self.mask_A - 0.5) / 0.5
-        self.fake_B = self.netG(torch.cat((self.mask_A, self.real_A), 1)) 
+        self.fake_B = self.netG(torch.cat((mask_A_down, self.real_A), 1)) 
         self.fake_B = self.fake_B * (self.mask_A) + self.real_A * (1 - self.mask_A)  

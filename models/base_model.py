@@ -79,10 +79,13 @@ class BaseModel():
     # return traning losses/errors. train.py will print out these errors as debugging information
     def get_current_losses(self):
         errors_ret = OrderedDict()
-        for name in self.loss_names:
-            if isinstance(name, str):
-                # float(...) works for both scalar tensor and float number
-                errors_ret[name] = float(getattr(self, 'loss_' + name))
+        if self.opt.coarse == False:
+            for name in self.loss_names:
+                if isinstance(name, str):
+                    # float(...) works for both scalar tensor and float number
+                    errors_ret[name] = float(getattr(self, 'loss_' + name))
+        else: 
+            errors_ret['G_L1'] = float(getattr(self, 'loss_G_L1'))
         return errors_ret
 
     # save models to the disk
@@ -125,16 +128,6 @@ class BaseModel():
                 # if you are using PyTorch newer than 0.4 (e.g., built from
                 # GitHub source), you can remove str() on self.device
                 state_dict = torch.load(load_path, map_location=self.device)
-
-                # if not self.isTrain:
-                #     # hard coded fix for incorrect weight names (weight_names contains resnet_9blocks weights on each line)
-                #     with open('weight_names.txt') as f:
-                #         lines = f.readlines()
-                #         weight_names = [line.rstrip() for line in lines]
-                #     temp = OrderedDict()
-                #     for i, value in enumerate(state_dict.values()):
-                #         temp[weight_names[i]] = value
-                #     state_dict = temp
 
                 if hasattr(state_dict, '_metadata'):
                     del state_dict._metadata

@@ -12,7 +12,7 @@ class BaseOptions():
     def initialize(self, parser):
         parser.add_argument('--data_path', type=str, default='./Data_folder/train/', help='Train images path')
         parser.add_argument('--val_path', type=str, default='./Data_folder/test/', help='Validation images path')
-        parser.add_argument('--batch_size', type=int, default=8, help='input batch size')
+        parser.add_argument('--batch_size', type=int, default=4, help='input batch size')
         parser.add_argument('--patch_size', default=[128, 128, 128], help='Size of the patches extracted from the image')
         parser.add_argument('--input_nc', type=int, default=2, help='# of input image channels')
         parser.add_argument('--output_nc', type=int, default=1, help='# of output image channels')
@@ -25,17 +25,19 @@ class BaseOptions():
         parser.add_argument('--ndf', type=int, default=64, help='# of discrim filters in first conv layer')
         parser.add_argument('--netD', type=str, default='n_layers', help='selects model to use for netD')
         parser.add_argument('--n_layers_D', type=int, default=5, help='only used if netD==n_layers')
+        # parser.add_argument('--n_layers_D2', type=int, default=3, help='only used if netD==n_layers')
         parser.add_argument('--netG', type=str, default='unet_128', help='selects model to use for netG. Look on Networks3D to see the all list')
 
-        parser.add_argument('--gpu_ids', default='9', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
-        parser.add_argument('--name', type=str, default='test_save', help='name of the experiment. It decides where to store samples and models')
+        parser.add_argument('--gpu_ids', default='3', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
+        parser.add_argument('--name', type=str, default='test_save_lsgan_run_4', help='name of the experiment. It decides where to store samples and models')
         parser.add_argument('--model', type=str, default='pix2pix3D', help='chooses which model to use. cycle_gan')
         parser.add_argument('--coarse', default=False, action='store_true', help='coarse or refinement network')
-
+        parser.add_argument('--gated', default=False, action='store_true', help='use gated convolutions in generator')
+        parser.add_argument('--spectral', default=False, action='store_true', help='use spectral norm in discriminator')
         parser.add_argument('--which_direction', type=str, default='AtoB', help='AtoB or BtoA (keep it AtoB)')
         parser.add_argument('--checkpoints_dir', type=str, default='./checkpoints', help='models are saved here')
         parser.add_argument('--workers', default=8, type=int, help='number of data loading workers')
-        parser.add_argument('--norm', type=str, default='instance', help='instance normalization or batch normalization')
+        parser.add_argument('--norm', type=str, default='spectral', help='instance normalization or batch normalization')
 
         parser.add_argument('--no_dropout', action='store_true', help='no dropout for the generator')
         parser.add_argument('--init_type', type=str, default='normal', help='network initialization [normal|xavier|kaiming|orthogonal]')
@@ -81,10 +83,16 @@ class BaseOptions():
         # save to the disk
         expr_dir = os.path.join(opt.checkpoints_dir, opt.name)
         mkdirs(expr_dir)
-        file_name = os.path.join(expr_dir, 'opt.txt')
-        with open(file_name, 'wt') as opt_file:
-            opt_file.write(message)
-            opt_file.write('\n')
+        if self.isTrain: 
+            file_name = os.path.join(expr_dir, 'opt_train.txt')
+            with open(file_name, 'wt') as opt_file:
+                opt_file.write(message)
+                opt_file.write('\n')
+        else: 
+            file_name = os.path.join(expr_dir, 'opt_test.txt')
+            with open(file_name, 'wt') as opt_file:
+                opt_file.write(message)
+                opt_file.write('\n')
 
     def parse(self):
 

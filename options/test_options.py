@@ -12,6 +12,7 @@ class TestOptions(BaseOptions):
         parser.add_argument('--which_epoch', type=str, default='latest', help='which epoch to load? set to latest to use latest cached model')
         parser.add_argument("--stride_inplane", type=int, nargs=1, default=32, help="Stride size in 2D plane")
         parser.add_argument("--stride_layer", type=int, nargs=1, default=32, help="Stride size in z direction")
+        parser.add_argument("--save_labels", type=bool, default=False, help="Save normalized labels (255)")
 
         parser.set_defaults(model='test')
         self.isTrain = False
